@@ -71,6 +71,15 @@ app.get('/auth/user', (req, res) => {
   }
 });
 
+// Check which OAuth providers are configured
+app.get('/auth/providers', (req, res) => {
+  const providers = {
+    google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+    github: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET)
+  };
+  res.json(providers);
+});
+
 // Serve login page
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/login.html'));
