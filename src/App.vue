@@ -78,76 +78,137 @@
         <span class="counter-value">{{ userCount }}</span>
       </div>
 
-      <!-- Player Info -->
-      <div v-if="playerAssignmentReceived" class="player-info">
-        <div v-if="playerColor" class="player-badge" :class="playerColor">
-          You are the <strong>{{ playerColor.toUpperCase() }}</strong> player
+      <!-- Lobby Browser (shown when not in a lobby) -->
+      <div v-if="!inLobby" class="lobby-browser">
+        <div class="lobby-section">
+          <h2>Create a Lobby</h2>
+          <div class="lobby-create-form">
+            <input 
+              v-model="newLobbyName" 
+              @keyup.enter="createLobby"
+              placeholder="Enter lobby name..."
+              class="lobby-input"
+              :disabled="!connected"
+              maxlength="50"
+            />
+            <button 
+              @click="createLobby" 
+              class="lobby-button create-button"
+              :disabled="!connected || !newLobbyName.trim()"
+            >
+              Create & Join
+            </button>
+          </div>
         </div>
-        <div v-else class="player-badge spectator">
-          You are a <strong>SPECTATOR</strong> - Game is full
-        </div>
-      </div>
-      <div v-else class="player-info">
-        <div class="player-badge connecting">
-          Connecting...
-        </div>
-      </div>
 
-      <!-- Game Status -->
-      <div class="game-status" :class="gameStatusClass">
-        {{ gameStatusMessage }}
-      </div>
-
-      <div class="grid-container">
-        <div class="grid" :class="{ locked: isBoardLocked }">
-          <div 
-            v-for="(row, rowIndex) in grid" 
-            :key="rowIndex" 
-            class="grid-row"
-          >
-            <div
-              v-for="(color, colIndex) in row"
-              :key="colIndex"
-              class="grid-square"
-              :style="{ backgroundColor: getSquareColor(color) }"
-              @click="toggleSquare(rowIndex, colIndex)"
-              :class="{ 'locked-square': isBoardLocked }"
-            ></div>
+        <div class="lobby-section">
+          <h2>Available Lobbies</h2>
+          <div v-if="availableLobbies.length === 0" class="lobby-empty">
+            No lobbies available. Create one to get started!
+          </div>
+          <div v-else class="lobby-list">
+            <div 
+              v-for="lobby in availableLobbies" 
+              :key="lobby.name" 
+              class="lobby-item"
+            >
+              <div class="lobby-info">
+                <span class="lobby-name">{{ lobby.name }}</span>
+                <span class="lobby-players">
+                  {{ lobby.playerCount }}/{{ lobby.maxPlayers }} players
+                </span>
+              </div>
+              <button 
+                @click="joinLobby(lobby.name)" 
+                class="lobby-button join-button"
+                :disabled="!connected || lobby.playerCount >= lobby.maxPlayers"
+              >
+                {{ lobby.playerCount >= lobby.maxPlayers ? 'Full' : 'Join' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Chat Section -->
-      <div class="chat-section">
-        <h3>Game Chat</h3>
-        <div class="chat-messages" ref="chatMessages">
-          <div 
-            v-for="(msg, index) in chatMessages" 
-            :key="index" 
-            class="chat-message"
-          >
-            <span class="chat-sender">{{ msg.sender }}:</span>
-            <span class="chat-text">{{ msg.message }}</span>
-          </div>
-          <div v-if="chatMessages.length === 0" class="chat-empty">
-            No messages yet. Start chatting!
+      <!-- Game UI (shown when in a lobby) -->
+      <div v-else class="game-container">
+        <div class="lobby-header">
+          <div class="lobby-info-bar">
+            <span class="current-lobby-name">
+              📍 Lobby: <strong>{{ currentLobby }}</strong>
+            </span>
+            <button @click="leaveLobby" class="lobby-button leave-button">
+              Leave Lobby
+            </button>
           </div>
         </div>
-        <div class="chat-input-container">
-          <input 
-            v-model="chatInput" 
-            @keyup.enter="sendChatMessage"
-            placeholder="Type a message..."
-            class="chat-input"
-            :disabled="!connected"
-          />
-          <button 
-            @click="sendChatMessage" 
-            class="chat-send-button"
-            :disabled="!connected || !chatInput.trim()"
-          >
-            Send
-          </button>
+
+        <!-- Player Info -->
+        <div v-if="playerAssignmentReceived" class="player-info">
+          <div v-if="playerColor" class="player-badge" :class="playerColor">
+            You are the <strong>{{ playerColor.toUpperCase() }}</strong> player
+          </div>
+          <div v-else class="player-badge waiting">
+            Waiting for game to start...
+          </div>
+        </div>
+
+        <!-- Game Status -->
+        <div class="game-status" :class="gameStatusClass">
+          {{ gameStatusMessage }}
+        </div>
+
+        <div class="grid-container">
+          <div class="grid" :class="{ locked: isBoardLocked }">
+            <div 
+              v-for="(row, rowIndex) in grid" 
+              :key="rowIndex" 
+              class="grid-row"
+            >
+              <div
+                v-for="(color, colIndex) in row"
+                :key="colIndex"
+                class="grid-square"
+                :style="{ backgroundColor: getSquareColor(color) }"
+                @click="toggleSquare(rowIndex, colIndex)"
+                :class="{ 'locked-square': isBoardLocked }"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Section -->
+        <div class="chat-section">
+          <h3>Game Chat</h3>
+          <div class="chat-messages" ref="chatMessages">
+            <div 
+              v-for="(msg, index) in chatMessages" 
+              :key="index" 
+              class="chat-message"
+            >
+              <span class="chat-sender">{{ msg.sender }}:</span>
+              <span class="chat-text">{{ msg.message }}</span>
+            </div>
+            <div v-if="chatMessages.length === 0" class="chat-empty">
+              No messages yet. Start chatting!
+            </div>
+          </div>
+          <div class="chat-input-container">
+            <input 
+              v-model="chatInput" 
+              @keyup.enter="sendChatMessage"
+              placeholder="Type a message..."
+              class="chat-input"
+              :disabled="!connected"
+            />
+            <button 
+              @click="sendChatMessage" 
+              class="chat-send-button"
+              :disabled="!connected || !chatInput.trim()"
+            >
+              Send
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -182,7 +243,11 @@ export default {
       isWinner: false,
       // Color selection state
       showColorSelection: false,
-      showWaitingForColor: false
+      showWaitingForColor: false,
+      // Lobby state
+      currentLobby: null,
+      availableLobbies: [],
+      newLobbyName: ''
     };
   },
   computed: {
@@ -191,6 +256,9 @@ export default {
     },
     statusClass() {
       return this.connected ? 'connected' : 'disconnected';
+    },
+    inLobby() {
+      return this.currentLobby !== null;
     },
     isBoardLocked() {
       return !this.connected || !this.isActivePlayer || this.gameStatus !== 'active';
@@ -251,11 +319,6 @@ export default {
             this.isActivePlayer = data.isActivePlayer;
             this.playerIndex = data.playerIndex;
             this.playerAssignmentReceived = true;
-            
-            // Show modal if game is full and user is not an active player
-            if (!data.isActivePlayer) {
-              this.showGameFullModal();
-            }
           } else if (data.type === 'gameStatus') {
             // Update game status
             this.gameStatus = data.status;
@@ -298,6 +361,28 @@ export default {
             this.$nextTick(() => {
               this.scrollChatToBottom();
             });
+          } else if (data.type === 'lobbyList') {
+            // Update available lobbies
+            this.availableLobbies = data.lobbies;
+          } else if (data.type === 'lobbyJoined') {
+            // Successfully joined a lobby
+            this.currentLobby = data.lobbyName;
+            this.chatMessages = []; // Clear chat when joining new lobby
+          } else if (data.type === 'lobbyLeft') {
+            // Successfully left a lobby
+            this.currentLobby = null;
+            this.playerColor = null;
+            this.isActivePlayer = false;
+            this.playerAssignmentReceived = false;
+            this.playerIndex = null;
+            this.gameStatus = 'waiting';
+            this.chatMessages = [];
+            this.grid = Array(10).fill(null).map(() => Array(10).fill('lime'));
+          } else if (data.type === 'error') {
+            // Handle error messages
+            this.modalTitle = 'Error';
+            this.modalMessage = data.message;
+            this.showModal = true;
           }
         } catch (error) {
           console.error('Error parsing message:', error);
@@ -434,6 +519,46 @@ export default {
       }));
       
       this.showColorSelection = false;
+    },
+    createLobby() {
+      if (!this.connected || !this.newLobbyName.trim()) {
+        return;
+      }
+      
+      this.ws.send(JSON.stringify({
+        type: 'createLobby',
+        lobbyName: this.newLobbyName.trim()
+      }));
+      
+      this.newLobbyName = '';
+    },
+    joinLobby(lobbyName) {
+      if (!this.connected) {
+        return;
+      }
+      
+      this.ws.send(JSON.stringify({
+        type: 'joinLobby',
+        lobbyName: lobbyName
+      }));
+    },
+    leaveLobby() {
+      if (!this.connected || !this.currentLobby) {
+        return;
+      }
+      
+      this.ws.send(JSON.stringify({
+        type: 'leaveLobby'
+      }));
+    },
+    requestLobbyList() {
+      if (!this.connected) {
+        return;
+      }
+      
+      this.ws.send(JSON.stringify({
+        type: 'getLobbyList'
+      }));
     }
   },
   mounted() {
@@ -913,5 +1038,174 @@ h1 {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Lobby Browser Styles */
+.lobby-browser {
+  padding: 20px;
+  background-color: #f9fafb;
+}
+
+.lobby-section {
+  margin-bottom: 30px;
+}
+
+.lobby-section h2 {
+  color: #374151;
+  margin-bottom: 15px;
+  font-size: 20px;
+}
+
+.lobby-create-form {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.lobby-input {
+  flex: 1;
+  padding: 12px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 16px;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.lobby-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.lobby-input:disabled {
+  background-color: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.lobby-button {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.create-button {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.create-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+.create-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lobby-empty {
+  text-align: center;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 40px 20px;
+  background-color: white;
+  border-radius: 8px;
+  border: 2px dashed #e5e7eb;
+}
+
+.lobby-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lobby-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background-color: white;
+  border-radius: 8px;
+  border: 2px solid #e5e7eb;
+  transition: border-color 0.2s;
+}
+
+.lobby-item:hover {
+  border-color: #667eea;
+}
+
+.lobby-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.lobby-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.lobby-players {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.join-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.join-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.join-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Lobby Header Styles */
+.lobby-header {
+  padding: 15px 20px;
+  background-color: #f0f4ff;
+  border-bottom: 2px solid #e0e7ff;
+}
+
+.lobby-info-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.current-lobby-name {
+  font-size: 18px;
+  color: #374151;
+}
+
+.leave-button {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+}
+
+.leave-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.player-badge.waiting {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 2px solid #fbbf24;
+}
+
+.game-container {
+  /* Container for in-lobby game UI */
 }
 </style>
