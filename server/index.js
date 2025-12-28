@@ -2,12 +2,86 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const session = require('express-session');
+const cookieParser = require('cookie-parser');
+require('dotenv').config();
+
+const passport = require('./auth');
+const { ensureAuthenticated } = require('./middleware');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Serve static files from the dist directory
+// Session configuration
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+});
+
+// Middleware setup
+app.use(cookieParser());
+app.use(sessionMiddleware);
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Authentication routes
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  (req, res) => {
+    res.redirect('/');
+  }
+);
+
+app.get('/auth/github',
+  passport.authenticate('github', { scope: ['user:email'] })
+);
+
+app.get('/auth/github/callback',
+  passport.authenticate('github', { failureRedirect: '/login' }),
+  (req, res) => {
+    res.redirect('/');
+  }
+);
+
+app.get('/auth/logout', (req, res) => {
+  req.logout((err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+    res.redirect('/login');
+  });
+});
+
+app.get('/auth/user', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({ user: req.user });
+  } else {
+    res.status(401).json({ error: 'Not authenticated' });
+  }
+});
+
+// Serve login page
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/login.html'));
+});
+
+// Protect the main app - require authentication
+app.get('/', ensureAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
+});
+
+// Serve static files from the dist directory (for authenticated users)
 app.use(express.static(path.join(__dirname, '../dist')));
 
 // Constants
@@ -326,12 +400,24 @@ function broadcastChatMessage(lobbyName, message, sender) {
   });
 }
 
-// WebSocket connection handling
-wss.on('connection', (ws) => {
-  console.log('New client connected');
-  
-  let currentLobbyName = null;
-  let playerIndex = null;
+// WebSocket connection handling with authentication
+wss.on('connection', (ws, req) => {
+  // Parse session from cookies
+  sessionMiddleware(req, {}, () => {
+    passport.initialize()(req, {}, () => {
+      passport.session()(req, {}, () => {
+        // Check if user is authenticated
+        if (!req.isAuthenticated || !req.isAuthenticated()) {
+          console.log('Unauthenticated WebSocket connection attempt');
+          ws.close(1008, 'Not authenticated');
+          return;
+        }
+        
+        const user = req.user;
+        console.log('New authenticated client connected:', user.displayName);
+        
+        let currentLobbyName = null;
+        let playerIndex = null;
 
   // Send lobby list to new client
   const lobbyList = Array.from(lobbies.values()).map(lobby => ({
@@ -625,6 +711,9 @@ wss.on('connection', (ws) => {
   // Handle errors
   ws.on('error', (error) => {
     console.error('WebSocket error:', error);
+  });
+      });
+    });
   });
 });
 
