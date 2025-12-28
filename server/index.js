@@ -23,6 +23,14 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// General rate limiter for API endpoints
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Validate required environment variables in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
   console.error('ERROR: SESSION_SECRET must be set in production environment');
@@ -83,7 +91,7 @@ app.get('/auth/logout', authLimiter, (req, res) => {
   });
 });
 
-app.get('/auth/user', (req, res) => {
+app.get('/auth/user', apiLimiter, (req, res) => {
   if (req.isAuthenticated()) {
     res.json({ user: req.user });
   } else {
@@ -92,7 +100,7 @@ app.get('/auth/user', (req, res) => {
 });
 
 // Check which OAuth providers are configured
-app.get('/auth/providers', (req, res) => {
+app.get('/auth/providers', apiLimiter, (req, res) => {
   const providers = {
     google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
     github: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET)
@@ -101,7 +109,7 @@ app.get('/auth/providers', (req, res) => {
 });
 
 // Serve login page
-app.get('/login', (req, res) => {
+app.get('/login', apiLimiter, (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/login.html'));
 });
 
