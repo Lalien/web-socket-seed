@@ -31,7 +31,7 @@
         </div>
       </div>
       <div v-else class="player-info">
-        <div class="player-badge" style="background-color: #f3f4f6; color: #6b7280; border: 2px solid #d1d5db;">
+        <div class="player-badge connecting">
           Connecting...
         </div>
       </div>
@@ -386,6 +386,12 @@ h1 {
   background-color: #f3f4f6;
   color: #4b5563;
   border: 2px solid #9ca3af;
+}
+
+.player-badge.connecting {
+  background-color: #f3f4f6;
+  color: #6b7280;
+  border: 2px solid #d1d5db;
 }
 
 /* Game Status Styles */

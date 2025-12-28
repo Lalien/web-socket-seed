@@ -155,8 +155,14 @@ wss.on('connection', (ws) => {
       
       // Handle chat messages
       if (message.type === 'chatMessage') {
-        const sender = playerColor ? `${playerColor.charAt(0).toUpperCase() + playerColor.slice(1)} Player` : 'Spectator';
-        broadcastChatMessage(message.message, sender);
+        // Validate and sanitize chat message
+        if (message.message && typeof message.message === 'string') {
+          const sanitizedMessage = message.message.trim().slice(0, 500); // Limit to 500 chars
+          if (sanitizedMessage.length > 0) {
+            const sender = playerColor ? `${playerColor.charAt(0).toUpperCase() + playerColor.slice(1)} Player` : 'Spectator';
+            broadcastChatMessage(sanitizedMessage, sender);
+          }
+        }
       }
     } catch (error) {
       console.error('Error parsing message:', error);
