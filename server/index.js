@@ -4,6 +4,7 @@ const WebSocket = require('ws');
 const path = require('path');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const passport = require('./auth');
@@ -12,6 +13,15 @@ const { ensureAuthenticated } = require('./middleware');
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+
+// Rate limiter for authentication routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 requests per windowMs
+  message: 'Too many authentication attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Validate required environment variables in production
 if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -37,12 +47,14 @@ app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Authentication routes
+// Authentication routes with rate limiting
 app.get('/auth/google',
+  authLimiter,
   passport.authenticate('google', { scope: ['profile', 'email'] })
 );
 
 app.get('/auth/google/callback',
+  authLimiter,
   passport.authenticate('google', { failureRedirect: '/login' }),
   (req, res) => {
     res.redirect('/');
@@ -50,17 +62,19 @@ app.get('/auth/google/callback',
 );
 
 app.get('/auth/github',
+  authLimiter,
   passport.authenticate('github', { scope: ['user:email'] })
 );
 
 app.get('/auth/github/callback',
+  authLimiter,
   passport.authenticate('github', { failureRedirect: '/login' }),
   (req, res) => {
     res.redirect('/');
   }
 );
 
-app.get('/auth/logout', (req, res) => {
+app.get('/auth/logout', authLimiter, (req, res) => {
   req.logout((err) => {
     if (err) {
       return res.status(500).json({ error: 'Logout failed' });
