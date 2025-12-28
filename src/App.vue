@@ -22,14 +22,17 @@
       </div>
 
       <!-- Player Info -->
-      <div v-if="playerColor" class="player-info">
-        <div class="player-badge" :class="playerColor">
+      <div v-if="playerAssignmentReceived" class="player-info">
+        <div v-if="playerColor" class="player-badge" :class="playerColor">
           You are the <strong>{{ playerColor.toUpperCase() }}</strong> player
+        </div>
+        <div v-else class="player-badge spectator">
+          You are a <strong>SPECTATOR</strong> - Game is full
         </div>
       </div>
       <div v-else class="player-info">
-        <div class="player-badge spectator">
-          You are a <strong>SPECTATOR</strong> - Game is full
+        <div class="player-badge" style="background-color: #f3f4f6; color: #6b7280; border: 2px solid #d1d5db;">
+          Connecting...
         </div>
       </div>
 
@@ -105,6 +108,7 @@ export default {
       userCount: 0,
       playerColor: null,
       isActivePlayer: false,
+      playerAssignmentReceived: false,
       gameStatus: 'waiting',
       showModal: false,
       modalTitle: '',
@@ -167,6 +171,7 @@ export default {
             // Receive player assignment
             this.playerColor = data.color;
             this.isActivePlayer = data.isActivePlayer;
+            this.playerAssignmentReceived = true;
             
             // Show modal if game is full and user is not an active player
             if (!data.isActivePlayer) {
@@ -198,6 +203,7 @@ export default {
       this.ws.onclose = () => {
         console.log('WebSocket disconnected');
         this.connected = false;
+        this.playerAssignmentReceived = false;
         // Attempt to reconnect after 3 seconds
         setTimeout(() => {
           this.connectWebSocket();
