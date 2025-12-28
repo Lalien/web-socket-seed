@@ -1,34 +1,33 @@
 <template>
   <div id="app">
     <div class="container">
-      <h1>WebSocket Chat</h1>
+      <h1>Interactive Grid Board</h1>
       
       <div class="status" :class="statusClass">
         {{ connectionStatus }}
       </div>
 
-      <div class="messages-container">
-        <div 
-          v-for="(msg, index) in messages" 
-          :key="index" 
-          class="message"
-          :class="msg.type"
-        >
-          <span class="timestamp">{{ formatTime(msg.timestamp) }}</span>
-          <span class="content">{{ msg.message }}</span>
-        </div>
+      <div class="user-counter">
+        <span class="counter-label">Connected Users:</span>
+        <span class="counter-value">{{ userCount }}</span>
       </div>
 
-      <div class="input-container">
-        <input 
-          v-model="newMessage" 
-          @keyup.enter="sendMessage"
-          placeholder="Type a message..."
-          :disabled="!connected"
-        />
-        <button @click="sendMessage" :disabled="!connected || !newMessage.trim()">
-          Send
-        </button>
+      <div class="grid-container">
+        <div class="grid">
+          <div 
+            v-for="(row, rowIndex) in grid" 
+            :key="rowIndex" 
+            class="grid-row"
+          >
+            <div
+              v-for="(color, colIndex) in row"
+              :key="colIndex"
+              class="grid-square"
+              :style="{ backgroundColor: color === 'lime' ? '#32CD32' : '#FF0000' }"
+              @click="toggleSquare(rowIndex, colIndex)"
+            ></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -41,8 +40,8 @@ export default {
     return {
       ws: null,
       connected: false,
-      messages: [],
-      newMessage: ''
+      grid: Array(10).fill(null).map(() => Array(10).fill('lime')),
+      userCount: 0
     };
   },
   computed: {
@@ -68,10 +67,17 @@ export default {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          this.messages.push(data);
-          this.$nextTick(() => {
-            this.scrollToBottom();
-          });
+          
+          if (data.type === 'initialState') {
+            // Receive initial grid state from server
+            this.grid = data.gridState;
+          } else if (data.type === 'squareToggled') {
+            // Update specific square
+            this.grid[data.row][data.col] = data.color;
+          } else if (data.type === 'userCount') {
+            // Update user count
+            this.userCount = data.count;
+          }
         } catch (error) {
           console.error('Error parsing message:', error);
         }
@@ -90,22 +96,13 @@ export default {
         console.error('WebSocket error:', error);
       };
     },
-    sendMessage() {
-      if (this.newMessage.trim() && this.connected) {
+    toggleSquare(row, col) {
+      if (this.connected) {
         this.ws.send(JSON.stringify({
-          message: this.newMessage
+          type: 'toggleSquare',
+          row: row,
+          col: col
         }));
-        this.newMessage = '';
-      }
-    },
-    formatTime(timestamp) {
-      const date = new Date(timestamp);
-      return date.toLocaleTimeString();
-    },
-    scrollToBottom() {
-      const container = document.querySelector('.messages-container');
-      if (container) {
-        container.scrollTop = container.scrollHeight;
       }
     }
   },
@@ -175,103 +172,60 @@ h1 {
   color: white;
 }
 
-.messages-container {
-  height: 400px;
-  overflow-y: auto;
-  padding: 20px;
-  background-color: #f9fafb;
+.user-counter {
+  padding: 15px 20px;
+  text-align: center;
+  background-color: #f0f4ff;
+  border-bottom: 2px solid #e0e7ff;
 }
 
-.message {
-  margin-bottom: 12px;
-  padding: 12px;
-  border-radius: 8px;
-  background: white;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+.counter-label {
+  font-size: 16px;
+  color: #4b5563;
+  margin-right: 10px;
+  font-weight: 500;
 }
 
-.message.system {
-  background-color: #e0e7ff;
-  font-style: italic;
+.counter-value {
+  font-size: 24px;
+  color: #667eea;
+  font-weight: 700;
 }
 
-.message .timestamp {
-  font-size: 12px;
-  color: #6b7280;
-  margin-right: 8px;
-}
-
-.message .content {
-  color: #1f2937;
-}
-
-.input-container {
+.grid-container {
+  padding: 30px;
   display: flex;
-  padding: 20px;
+  justify-content: center;
+  align-items: center;
   background-color: #f9fafb;
-  border-top: 1px solid #e5e7eb;
 }
 
-.input-container input {
-  flex: 1;
-  padding: 12px;
-  border: 2px solid #e5e7eb;
+.grid {
+  display: inline-block;
+  border: 3px solid #374151;
   border-radius: 8px;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
+  overflow: hidden;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-.input-container input:focus {
-  border-color: #667eea;
+.grid-row {
+  display: flex;
 }
 
-.input-container input:disabled {
-  background-color: #f3f4f6;
-  cursor: not-allowed;
-}
-
-.input-container button {
-  margin-left: 10px;
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
+.grid-square {
+  width: 50px;
+  height: 50px;
+  border: 1px solid #374151;
   cursor: pointer;
-  transition: transform 0.2s, opacity 0.2s;
+  transition: transform 0.1s, box-shadow 0.1s;
 }
 
-.input-container button:hover:not(:disabled) {
-  transform: translateY(-1px);
+.grid-square:hover {
+  transform: scale(0.95);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
 }
 
-.input-container button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.input-container button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Scrollbar styling */
-.messages-container::-webkit-scrollbar {
-  width: 8px;
-}
-
-.messages-container::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-.messages-container::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
-}
-
-.messages-container::-webkit-scrollbar-thumb:hover {
-  background: #555;
+.grid-square:active {
+  transform: scale(0.9);
 }
 </style>
