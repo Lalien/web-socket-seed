@@ -13,6 +13,12 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
+// Validate required environment variables in production
+if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+  console.error('ERROR: SESSION_SECRET must be set in production environment');
+  process.exit(1);
+}
+
 // Session configuration
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
@@ -409,24 +415,34 @@ function broadcastChatMessage(lobbyName, message, sender) {
   });
 }
 
-// WebSocket connection handling with authentication
-wss.on('connection', (ws, req) => {
-  // Parse session from cookies
+// Helper function to authenticate WebSocket connections
+function authenticateWebSocket(req, callback) {
   sessionMiddleware(req, {}, () => {
     passport.initialize()(req, {}, () => {
       passport.session()(req, {}, () => {
-        // Check if user is authenticated
         if (!req.isAuthenticated || !req.isAuthenticated()) {
-          console.log('Unauthenticated WebSocket connection attempt');
-          ws.close(1008, 'Not authenticated');
-          return;
+          callback(null, false);
+        } else {
+          callback(req.user, true);
         }
-        
-        const user = req.user;
-        console.log('New authenticated client connected:', user.displayName);
-        
-        let currentLobbyName = null;
-        let playerIndex = null;
+      });
+    });
+  });
+}
+
+// WebSocket connection handling with authentication
+wss.on('connection', (ws, req) => {
+  authenticateWebSocket(req, (user, isAuthenticated) => {
+    if (!isAuthenticated) {
+      console.log('Unauthenticated WebSocket connection attempt');
+      ws.close(1008, 'Not authenticated');
+      return;
+    }
+    
+    console.log('New authenticated client connected:', user.displayName);
+    
+    let currentLobbyName = null;
+    let playerIndex = null;
 
   // Send lobby list to new client
   const lobbyList = Array.from(lobbies.values()).map(lobby => ({
@@ -721,8 +737,6 @@ wss.on('connection', (ws, req) => {
   ws.on('error', (error) => {
     console.error('WebSocket error:', error);
   });
-      });
-    });
   });
 });
 
