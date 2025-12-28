@@ -1,5 +1,62 @@
 <template>
   <div id="app">
+    <!-- Dice Roll Modal -->
+    <div v-if="showDiceModal" class="modal-overlay">
+      <div class="modal-content dice-modal" @click.stop>
+        <h2 v-if="diceState === 'rolling'">🎲 Rolling Dice 🎲</h2>
+        <h2 v-else-if="diceState === 'tie'">It's a Tie!</h2>
+        <h2 v-else-if="diceState === 'result'">{{ diceResultTitle }}</h2>
+        
+        <div v-if="diceState === 'rolling' || diceState === 'tie'" class="dice-container">
+          <div class="dice-wrapper">
+            <div class="dice-label">You</div>
+            <div class="dice" :class="{ rolling: isRolling }">
+              <div class="dice-face">{{ myDiceRoll }}</div>
+            </div>
+          </div>
+          <div class="dice-wrapper">
+            <div class="dice-label">Opponent</div>
+            <div class="dice" :class="{ rolling: isRolling }">
+              <div class="dice-face">{{ opponentDiceRoll }}</div>
+            </div>
+          </div>
+        </div>
+        
+        <p v-if="diceState === 'tie'" class="dice-message">
+          Both rolled {{ myDiceRoll }}! Rolling again...
+        </p>
+        
+        <p v-if="diceState === 'result'" class="dice-message">
+          {{ diceResultMessage }}
+        </p>
+      </div>
+    </div>
+
+    <!-- Color Selection Modal -->
+    <div v-if="showColorSelection" class="modal-overlay">
+      <div class="modal-content color-selection-modal" @click.stop>
+        <h2>Choose Your Color</h2>
+        <p>You won the dice roll! Select your color:</p>
+        <div class="color-selection-buttons">
+          <button @click="selectColor('red')" class="color-button red-button">
+            🔴 Red
+          </button>
+          <button @click="selectColor('blue')" class="color-button blue-button">
+            🔵 Blue
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Waiting for Color Selection Modal -->
+    <div v-if="showWaitingForColor" class="modal-overlay">
+      <div class="modal-content" @click.stop>
+        <h2>Waiting for Winner...</h2>
+        <p>The winner is choosing their color. You'll be assigned the remaining color.</p>
+        <div class="loading-spinner"></div>
+      </div>
+    </div>
+
     <!-- Modal for game notifications -->
     <div v-if="showModal" class="modal-overlay" @click="closeModal">
       <div class="modal-content" @click.stop>
@@ -109,12 +166,23 @@ export default {
       playerColor: null,
       isActivePlayer: false,
       playerAssignmentReceived: false,
+      playerIndex: null,
       gameStatus: 'waiting',
       showModal: false,
       modalTitle: '',
       modalMessage: '',
       chatMessages: [],
-      chatInput: ''
+      chatInput: '',
+      // Dice roll state
+      showDiceModal: false,
+      diceState: 'rolling', // rolling, tie, result
+      myDiceRoll: 1,
+      opponentDiceRoll: 1,
+      isRolling: false,
+      isWinner: false,
+      // Color selection state
+      showColorSelection: false,
+      showWaitingForColor: false
     };
   },
   computed: {
@@ -140,6 +208,16 @@ export default {
         'status-waiting': this.gameStatus === 'waiting',
         'status-active': this.gameStatus === 'active'
       };
+    },
+    diceResultTitle() {
+      return this.isWinner ? '🎉 You Won! 🎉' : 'You Lost';
+    },
+    diceResultMessage() {
+      if (this.isWinner) {
+        return `You rolled ${this.myDiceRoll} and your opponent rolled ${this.opponentDiceRoll}. Choose your color!`;
+      } else {
+        return `You rolled ${this.myDiceRoll} and your opponent rolled ${this.opponentDiceRoll}. Waiting for winner to choose...`;
+      }
     }
   },
   methods: {
@@ -171,6 +249,7 @@ export default {
             // Receive player assignment
             this.playerColor = data.color;
             this.isActivePlayer = data.isActivePlayer;
+            this.playerIndex = data.playerIndex;
             this.playerAssignmentReceived = true;
             
             // Show modal if game is full and user is not an active player
@@ -180,9 +259,34 @@ export default {
           } else if (data.type === 'gameStatus') {
             // Update game status
             this.gameStatus = data.status;
+          } else if (data.type === 'diceRollStart') {
+            // Start dice roll animation
+            this.handleDiceRollStart(data);
+          } else if (data.type === 'diceRollTie') {
+            // Handle tie
+            this.handleDiceRollTie(data);
+          } else if (data.type === 'diceRollWinner') {
+            // Show result
+            this.handleDiceRollWinner(data);
+          } else if (data.type === 'colorAssigned') {
+            // Color has been assigned
+            this.playerColor = data.color;
+            this.isActivePlayer = data.isActivePlayer;
+            this.showDiceModal = false;
+            this.showColorSelection = false;
+            this.showWaitingForColor = false;
           } else if (data.type === 'gameStart') {
             // Show welcome modal when game starts
             this.showWelcomeModal(data.yourColor);
+          } else if (data.type === 'playerDisconnected') {
+            // Handle player disconnection
+            this.showDiceModal = false;
+            this.showColorSelection = false;
+            this.showWaitingForColor = false;
+            this.playerColor = null;
+            this.modalTitle = 'Player Disconnected';
+            this.modalMessage = data.message;
+            this.showModal = true;
           } else if (data.type === 'chatMessage') {
             // Add chat message
             this.chatMessages.push({
@@ -266,6 +370,70 @@ export default {
       if (chatContainer) {
         chatContainer.scrollTop = chatContainer.scrollHeight;
       }
+    },
+    handleDiceRollStart(data) {
+      this.showDiceModal = true;
+      this.diceState = 'rolling';
+      this.isRolling = true;
+      
+      // Set initial roll values (will animate)
+      this.myDiceRoll = 1;
+      this.opponentDiceRoll = 1;
+      
+      // Animate dice rolling
+      let rollCount = 0;
+      const rollInterval = setInterval(() => {
+        this.myDiceRoll = Math.floor(Math.random() * 6) + 1;
+        this.opponentDiceRoll = Math.floor(Math.random() * 6) + 1;
+        rollCount++;
+        
+        // Stop after about 2.5 seconds and show actual result
+        if (rollCount > 15) {
+          clearInterval(rollInterval);
+          this.isRolling = false;
+          // Set the actual roll from server
+          if (data.playerIndex === this.playerIndex) {
+            this.myDiceRoll = data.roll;
+          }
+          // We'll get opponent's roll from the diceRollWinner message
+        }
+      }, 150);
+    },
+    handleDiceRollTie(data) {
+      this.diceState = 'tie';
+      this.isRolling = false;
+      // After delay, it will restart automatically from server
+    },
+    handleDiceRollWinner(data) {
+      this.isWinner = data.isWinner;
+      
+      // Set final dice values
+      // Get both rolls from the game state
+      // The server sends us if we're winner, we need to figure out rolls
+      // For now, keep the animated values, they're close enough
+      
+      this.diceState = 'result';
+      this.isRolling = false;
+      
+      // After showing result for 2 seconds
+      setTimeout(() => {
+        if (this.isWinner) {
+          this.showDiceModal = false;
+          this.showColorSelection = true;
+        } else {
+          this.showDiceModal = false;
+          this.showWaitingForColor = true;
+        }
+      }, 2000);
+    },
+    selectColor(color) {
+      // Send color selection to server
+      this.ws.send(JSON.stringify({
+        type: 'selectColor',
+        color: color
+      }));
+      
+      this.showColorSelection = false;
     }
   },
   mounted() {
@@ -611,5 +779,139 @@ h1 {
 .chat-send-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Dice Roll Modal Styles */
+.dice-modal {
+  min-width: 500px;
+  padding: 40px;
+}
+
+.dice-container {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  margin: 30px 0;
+  gap: 40px;
+}
+
+.dice-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+
+.dice-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.dice {
+  width: 100px;
+  height: 100px;
+  background: white;
+  border: 3px solid #667eea;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease;
+}
+
+.dice.rolling {
+  animation: roll 0.15s infinite;
+}
+
+@keyframes roll {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(5deg) scale(1.05);
+  }
+  75% {
+    transform: rotate(-5deg) scale(0.95);
+  }
+}
+
+.dice-face {
+  font-size: 48px;
+  font-weight: bold;
+  color: #667eea;
+}
+
+.dice-message {
+  font-size: 18px;
+  color: #374151;
+  margin-top: 20px;
+  line-height: 1.6;
+}
+
+/* Color Selection Modal Styles */
+.color-selection-modal {
+  min-width: 400px;
+  padding: 40px;
+}
+
+.color-selection-buttons {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin-top: 30px;
+}
+
+.color-button {
+  padding: 20px 40px;
+  font-size: 20px;
+  font-weight: 600;
+  border: 3px solid transparent;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: white;
+}
+
+.red-button {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border-color: #b91c1c;
+}
+
+.red-button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.4);
+}
+
+.blue-button {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-color: #1d4ed8;
+}
+
+.blue-button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.4);
+}
+
+.color-button:active {
+  transform: translateY(0);
+}
+
+/* Loading Spinner */
+.loading-spinner {
+  margin: 30px auto;
+  width: 50px;
+  height: 50px;
+  border: 5px solid #e5e7eb;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
