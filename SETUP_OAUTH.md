@@ -177,7 +177,7 @@ When deploying to production:
 - Make sure there are no trailing slashes in the URLs
 
 ### "Too many authentication attempts" error
-- The application has rate limiting enabled (10 attempts per 15 minutes)
+- The application has rate limiting enabled (20 attempts per 15 minutes)
 - Wait 15 minutes or restart the server to reset the limit
 
 ### WebSocket connection fails

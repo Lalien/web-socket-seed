@@ -296,8 +296,25 @@
       })
       .catch(err => {
         console.error('Error fetching providers:', err);
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('error').style.display = 'block';
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const errorTitle = error.querySelector('h3');
+        const errorText = error.querySelector('p');
+        
+        loading.style.display = 'none';
+        error.style.display = 'block';
+        
+        // Provide more specific error messages
+        if (!navigator.onLine) {
+          errorTitle.textContent = '📡 Network Error';
+          errorText.textContent = 'Unable to connect to the server. Please check your internet connection and try again.';
+        } else if (err.name === 'TypeError') {
+          errorTitle.textContent = '🔌 Server Unavailable';
+          errorText.textContent = 'The server is not responding. Please ensure the server is running and try again.';
+        } else {
+          errorTitle.textContent = '⚠️ OAuth Not Configured';
+          errorText.textContent = 'Unable to load authentication providers. Please ensure OAuth is properly configured in your .env file.';
+        }
       });
   </script>
 </body>
