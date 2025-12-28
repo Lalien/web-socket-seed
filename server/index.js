@@ -17,7 +17,7 @@ const wss = new WebSocket.Server({ server });
 // Rate limiter for authentication routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 requests per windowMs
+  max: 20, // limit each IP to 20 requests per windowMs
   message: 'Too many authentication attempts, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -442,7 +442,7 @@ function authenticateWebSocket(req, callback) {
   sessionMiddleware(req, {}, () => {
     passport.initialize()(req, {}, () => {
       passport.session()(req, {}, () => {
-        if (!req.isAuthenticated || !req.isAuthenticated()) {
+        if (!req.isAuthenticated()) {
           callback(null, false);
         } else {
           callback(req.user, true);
