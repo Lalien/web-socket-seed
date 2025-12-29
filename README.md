@@ -165,6 +165,20 @@ Edit `src/App.vue` to customize the appearance and functionality of the frontend
 
 You can enable or disable OAuth providers by setting or removing their credentials in the `.env` file. At least one provider must be configured for authentication to work.
 
+### Set Up Google Analytics (Optional)
+
+To track user analytics with Google Analytics:
+
+1. Create a Google Analytics account at [analytics.google.com](https://analytics.google.com)
+2. Create a new property for your application
+3. Get your Measurement ID (format: `G-XXXXXXXXXX`)
+4. In both `src/index.html` and `src/login.html`, replace **both occurrences** of `G-XXXXXXXXXX` with your actual tracking ID:
+   - One in the script `src` attribute: `<script async src="https://www.googletagmanager.com/gtag/js?id=YOUR_ID"></script>`
+   - One in the `gtag('config', 'YOUR_ID')` call
+5. Rebuild the frontend with `npm run build`
+
+The Google Analytics tracking code is located in the `<head>` section of both HTML files and will track page views and user interactions automatically.
+
 ### Add More Features
 
 - Add more OAuth providers (Twitter, Facebook, etc.)
