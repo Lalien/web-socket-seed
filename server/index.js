@@ -403,7 +403,7 @@ function startTurnDiceRoll(lobbyName) {
   }, 3000); // 3 second delay for animation
 }
 
-  // Determine who goes first from turn dice rolls
+// Determine who goes first from turn dice rolls
 function determineTurnDiceWinner(lobbyName) {
   const lobby = lobbies.get(lobbyName);
   if (!lobby) {
