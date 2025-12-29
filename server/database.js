@@ -1,8 +1,15 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
+
+// Ensure data directory exists
+const dataDir = path.join(__dirname, '../data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
 
 // Initialize database
-const dbPath = path.join(__dirname, '../data/users.db');
+const dbPath = path.join(dataDir, 'users.db');
 const db = new Database(dbPath);
 
 // Enable WAL mode for better concurrency
@@ -12,7 +19,7 @@ db.pragma('journal_mode = WAL');
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE,
     display_name TEXT NOT NULL,
     google_id TEXT UNIQUE,
     github_id TEXT UNIQUE,
@@ -86,13 +93,13 @@ function createOrUpdateUser(userData) {
   let user = findUserByProviderId(provider, providerId);
   
   if (user) {
-    // Update existing user
+    // Update existing user with latest information including email
     const updateStmt = db.prepare(`
       UPDATE users 
-      SET display_name = ?, photo = ?, updated_at = CURRENT_TIMESTAMP
+      SET email = COALESCE(?, email), display_name = ?, photo = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
-    updateStmt.run(displayName, photo, user.id);
+    updateStmt.run(email, displayName, photo, user.id);
     return findUserById(user.id);
   }
   
@@ -102,21 +109,21 @@ function createOrUpdateUser(userData) {
     
     if (user) {
       // Merge accounts - update the existing record with the new provider ID
-      // If provider is Google, also update display name (Google is favored)
+      // If provider is Google, also update display name (Google is favored) and email
       if (provider === 'google') {
         const updateStmt = db.prepare(`
           UPDATE users 
-          SET google_id = ?, display_name = ?, photo = ?, updated_at = CURRENT_TIMESTAMP
+          SET google_id = ?, email = COALESCE(?, email), display_name = ?, photo = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `);
-        updateStmt.run(providerId, displayName, photo, user.id);
+        updateStmt.run(providerId, email, displayName, photo, user.id);
       } else if (provider === 'github') {
         const updateStmt = db.prepare(`
           UPDATE users 
-          SET github_id = ?, photo = ?, updated_at = CURRENT_TIMESTAMP
+          SET github_id = ?, email = COALESCE(?, email), photo = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `);
-        updateStmt.run(providerId, photo, user.id);
+        updateStmt.run(providerId, email, photo, user.id);
       }
       return findUserById(user.id);
     }
