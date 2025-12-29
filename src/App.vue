@@ -67,7 +67,13 @@
     </div>
 
     <div class="container">
-      <h1>Interactive Grid Board</h1>
+      <div class="header-bar">
+        <h1>Interactive Grid Board</h1>
+        <div class="user-info">
+          <span class="welcome-text">👋 {{ currentUser?.displayName || 'User' }}</span>
+          <button @click="logout" class="logout-button">Logout</button>
+        </div>
+      </div>
       
       <div class="status" :class="statusClass">
         {{ connectionStatus }}
@@ -247,7 +253,9 @@ export default {
       // Lobby state
       currentLobby: null,
       availableLobbies: [],
-      newLobbyName: ''
+      newLobbyName: '',
+      // User state
+      currentUser: null
     };
   },
   computed: {
@@ -559,9 +567,27 @@ export default {
       this.ws.send(JSON.stringify({
         type: 'getLobbyList'
       }));
+    },
+    logout() {
+      window.location.href = '/auth/logout';
+    },
+    async fetchCurrentUser() {
+      try {
+        const response = await fetch('/auth/user');
+        if (response.ok) {
+          const data = await response.json();
+          this.currentUser = data.user;
+        } else {
+          window.location.href = '/login';
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error);
+        window.location.href = '/login';
+      }
     }
   },
   mounted() {
+    this.fetchCurrentUser();
     this.connectWebSocket();
   },
   beforeUnmount() {
@@ -602,12 +628,50 @@ body {
   overflow: hidden;
 }
 
-h1 {
+.header-bar {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   padding: 20px;
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+h1 {
+  margin: 0;
   font-size: 24px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.welcome-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.logout-button {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.logout-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.logout-button:active {
+  transform: translateY(0);
 }
 
 .status {

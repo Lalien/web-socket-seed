@@ -2,12 +2,123 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const session = require('express-session');
+const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
+
+const passport = require('./auth');
+const { ensureAuthenticated } = require('./middleware');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Serve static files from the dist directory
+// Rate limiter for authentication routes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // limit each IP to 20 requests per windowMs
+  message: 'Too many authentication attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// General rate limiter for API endpoints
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Validate required environment variables in production
+if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+  console.error('ERROR: SESSION_SECRET must be set in production environment');
+  process.exit(1);
+}
+
+// Session configuration
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-this',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+});
+
+// Middleware setup
+app.use(cookieParser());
+app.use(sessionMiddleware);
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Authentication routes with rate limiting
+app.get('/auth/google',
+  authLimiter,
+  passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+
+app.get('/auth/google/callback',
+  authLimiter,
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  (req, res) => {
+    res.redirect('/');
+  }
+);
+
+app.get('/auth/github',
+  authLimiter,
+  passport.authenticate('github', { scope: ['user:email'] })
+);
+
+app.get('/auth/github/callback',
+  authLimiter,
+  passport.authenticate('github', { failureRedirect: '/login' }),
+  (req, res) => {
+    res.redirect('/');
+  }
+);
+
+app.get('/auth/logout', authLimiter, (req, res) => {
+  req.logout((err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+    res.redirect('/login');
+  });
+});
+
+app.get('/auth/user', apiLimiter, (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({ user: req.user });
+  } else {
+    res.status(401).json({ error: 'Not authenticated' });
+  }
+});
+
+// Check which OAuth providers are configured
+app.get('/auth/providers', apiLimiter, (req, res) => {
+  const providers = {
+    google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+    github: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET)
+  };
+  res.json(providers);
+});
+
+// Serve login page
+app.get('/login', apiLimiter, (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/login.html'));
+});
+
+// Protect the main app - require authentication
+app.get('/', ensureAuthenticated, (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
+});
+
+// Serve static files from the dist directory (for authenticated users)
 app.use(express.static(path.join(__dirname, '../dist')));
 
 // Constants
@@ -326,12 +437,34 @@ function broadcastChatMessage(lobbyName, message, sender) {
   });
 }
 
-// WebSocket connection handling
-wss.on('connection', (ws) => {
-  console.log('New client connected');
-  
-  let currentLobbyName = null;
-  let playerIndex = null;
+// Helper function to authenticate WebSocket connections
+function authenticateWebSocket(req, callback) {
+  sessionMiddleware(req, {}, () => {
+    passport.initialize()(req, {}, () => {
+      passport.session()(req, {}, () => {
+        if (!req.isAuthenticated()) {
+          callback(null, false);
+        } else {
+          callback(req.user, true);
+        }
+      });
+    });
+  });
+}
+
+// WebSocket connection handling with authentication
+wss.on('connection', (ws, req) => {
+  authenticateWebSocket(req, (user, isAuthenticated) => {
+    if (!isAuthenticated) {
+      console.log('Unauthenticated WebSocket connection attempt');
+      ws.close(1008, 'Not authenticated');
+      return;
+    }
+    
+    console.log('New authenticated client connected:', user.displayName);
+    
+    let currentLobbyName = null;
+    let playerIndex = null;
 
   // Send lobby list to new client
   const lobbyList = Array.from(lobbies.values()).map(lobby => ({
@@ -625,6 +758,7 @@ wss.on('connection', (ws) => {
   // Handle errors
   ws.on('error', (error) => {
     console.error('WebSocket error:', error);
+  });
   });
 });
 
