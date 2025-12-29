@@ -135,10 +135,12 @@ function createInitialGridState() {
 // Helper function to create initial game state
 function createInitialGameState() {
   return {
-    phase: 'waiting', // waiting, rolling, color-selection, active
+    phase: 'waiting', // waiting, rolling, color-selection, turn-rolling, active
     diceRolls: {},
     winner: null,
-    loser: null
+    loser: null,
+    currentTurn: null, // Player index (0 or 1) whose turn it is
+    turnDiceRolls: {} // Dice rolls for turn determination
   };
 }
 
@@ -368,6 +370,126 @@ function determineDiceWinner(lobbyName) {
   });
 }
 
+// Start dice roll for turn determination
+function startTurnDiceRoll(lobbyName) {
+  const lobby = lobbies.get(lobbyName);
+  if (!lobby || lobby.players.length !== MAX_PLAYERS) {
+    return;
+  }
+  
+  lobby.gameState.phase = 'turn-rolling';
+  lobby.gameState.turnDiceRolls = {};
+  
+  // Generate dice rolls for both players
+  lobby.players.forEach((player, index) => {
+    const roll = Math.floor(Math.random() * 6) + 1;
+    lobby.gameState.turnDiceRolls[index] = roll;
+  });
+  
+  // Broadcast turn dice roll start to both players
+  lobby.players.forEach((player, index) => {
+    if (player.ws.readyState === WebSocket.OPEN) {
+      player.ws.send(JSON.stringify({
+        type: 'turnDiceRollStart',
+        playerIndex: index,
+        roll: lobby.gameState.turnDiceRolls[index]
+      }));
+    }
+  });
+  
+  // After animation delay, determine winner
+  setTimeout(() => {
+    determineTurnDiceWinner(lobbyName);
+  }, 3000); // 3 second delay for animation
+}
+
+// Determine who goes first from turn dice rolls
+function determineTurnDiceWinner(lobbyName) {
+  const lobby = lobbies.get(lobbyName);
+  if (!lobby) {
+    return;
+  }
+  
+  const roll1 = lobby.gameState.turnDiceRolls[0];
+  const roll2 = lobby.gameState.turnDiceRolls[1];
+  
+  // Check for tie
+  if (roll1 === roll2) {
+    // Broadcast tie, then restart roll
+    lobby.players.forEach((player, index) => {
+      if (player.ws.readyState === WebSocket.OPEN) {
+        player.ws.send(JSON.stringify({
+          type: 'turnDiceRollTie',
+          message: 'It\'s a tie! Rolling again...'
+        }));
+      }
+    });
+    
+    // Restart roll after delay
+    setTimeout(() => {
+      startTurnDiceRoll(lobbyName);
+    }, 2000);
+    return;
+  }
+  
+  // Determine who goes first
+  const firstPlayerIndex = roll1 > roll2 ? 0 : 1;
+  
+  lobby.gameState.currentTurn = firstPlayerIndex;
+  lobby.gameState.phase = 'active';
+  
+  // Notify both players of result and start the game
+  lobby.players.forEach((player, index) => {
+    if (player.ws.readyState === WebSocket.OPEN) {
+      player.ws.send(JSON.stringify({
+        type: 'turnDiceRollWinner',
+        isFirst: index === firstPlayerIndex,
+        firstPlayerIndex: firstPlayerIndex
+      }));
+    }
+  });
+  
+  // Broadcast game status as active
+  broadcastGameStatus(lobbyName);
+  
+  // Send turn notification to the first player
+  setTimeout(() => {
+    sendTurnNotification(lobbyName, firstPlayerIndex);
+  }, 2000);
+}
+
+// Send turn notification to current player
+function sendTurnNotification(lobbyName, playerIndex) {
+  const lobby = lobbies.get(lobbyName);
+  if (!lobby) {
+    return;
+  }
+  
+  lobby.players.forEach((player, index) => {
+    if (player.ws.readyState === WebSocket.OPEN) {
+      player.ws.send(JSON.stringify({
+        type: 'turnChanged',
+        currentTurn: playerIndex,
+        isYourTurn: index === playerIndex
+      }));
+    }
+  });
+}
+
+// Switch turn to the other player
+function switchTurn(lobbyName) {
+  const lobby = lobbies.get(lobbyName);
+  if (!lobby || lobby.gameState.phase !== 'active') {
+    return;
+  }
+  
+  // Switch to the other player
+  lobby.gameState.currentTurn = lobby.gameState.currentTurn === 0 ? 1 : 0;
+  
+  // Notify both players
+  sendTurnNotification(lobbyName, lobby.gameState.currentTurn);
+}
+
 // Handle color selection from winner
 function handleColorSelection(lobbyName, color) {
   const lobby = lobbies.get(lobbyName);
@@ -382,9 +504,6 @@ function handleColorSelection(lobbyName, color) {
   const loserColor = color === 'red' ? 'blue' : 'red';
   winnerPlayer.color = color;
   loserPlayer.color = loserColor;
-  
-  // Update game state to active
-  lobby.gameState.phase = 'active';
   
   // Notify both players of their final color assignments
   if (winnerPlayer.ws.readyState === WebSocket.OPEN) {
@@ -403,19 +522,10 @@ function handleColorSelection(lobbyName, color) {
     }));
   }
   
-  // Broadcast game status as active
-  broadcastGameStatus(lobbyName);
-  
-  // Send game start to both players
-  lobby.players.forEach((player) => {
-    if (player.ws.readyState === WebSocket.OPEN) {
-      player.ws.send(JSON.stringify({
-        type: 'gameStart',
-        message: 'Welcome to the game!',
-        yourColor: player.color
-      }));
-    }
-  });
+  // Start turn determination dice roll after a delay
+  setTimeout(() => {
+    startTurnDiceRoll(lobbyName);
+  }, 1000);
 }
 
 // Broadcast chat message to lobby
@@ -689,6 +799,21 @@ wss.on('connection', (ws, req) => {
       
       // Handle grid toggle
       if (message.type === 'toggleSquare') {
+        // Validate it's the player's turn
+        if (lobby.gameState.phase !== 'active') {
+          console.log('Game is not in active phase');
+          return;
+        }
+        
+        if (lobby.gameState.currentTurn !== playerIndex) {
+          console.log(`Not player ${playerIndex}'s turn (current turn: ${lobby.gameState.currentTurn})`);
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'It\'s not your turn!'
+          }));
+          return;
+        }
+        
         // Get player data
         const playerData = lobby.players.find(p => p.ws === ws);
         if (!playerData || !playerData.color) {
@@ -721,6 +846,9 @@ wss.on('connection', (ws, req) => {
             }));
           }
         });
+        
+        // Switch turn to the other player
+        switchTurn(currentLobbyName);
       }
       
       // Handle chat messages

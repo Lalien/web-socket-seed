@@ -57,6 +57,48 @@
       </div>
     </div>
 
+    <!-- Turn Dice Roll Modal -->
+    <div v-if="showTurnDiceModal" class="modal-overlay">
+      <div class="modal-content dice-modal" @click.stop>
+        <h2 v-if="turnDiceState === 'rolling'">🎲 Rolling for First Turn 🎲</h2>
+        <h2 v-else-if="turnDiceState === 'tie'">It's a Tie!</h2>
+        <h2 v-else-if="turnDiceState === 'result'">{{ turnDiceResultTitle }}</h2>
+        
+        <div v-if="turnDiceState === 'rolling' || turnDiceState === 'tie'" class="dice-container">
+          <div class="dice-wrapper">
+            <div class="dice-label">You</div>
+            <div class="dice" :class="{ rolling: isTurnDiceRolling }">
+              <div class="dice-face">{{ myTurnDiceRoll }}</div>
+            </div>
+          </div>
+          <div class="dice-wrapper">
+            <div class="dice-label">Opponent</div>
+            <div class="dice" :class="{ rolling: isTurnDiceRolling }">
+              <div class="dice-face">{{ opponentTurnDiceRoll }}</div>
+            </div>
+          </div>
+        </div>
+        
+        <p v-if="turnDiceState === 'tie'" class="dice-message">
+          Both rolled {{ myTurnDiceRoll }}! Rolling again...
+        </p>
+        
+        <p v-if="turnDiceState === 'result'" class="dice-message">
+          {{ turnDiceResultMessage }}
+        </p>
+      </div>
+    </div>
+
+    <!-- Turn Indicator Modal with Penguin -->
+    <div v-if="showTurnModal" class="modal-overlay" @click="closeTurnModal">
+      <div class="modal-content turn-modal" @click.stop>
+        <div class="penguin-emoji">🐧</div>
+        <h2>Your Turn!</h2>
+        <p>It's your turn to play! Make your move.</p>
+        <button @click="closeTurnModal" class="modal-button penguin-button">Let's Go!</button>
+      </div>
+    </div>
+
     <!-- Modal for game notifications -->
     <div v-if="showModal" class="modal-overlay" @click="closeModal">
       <div class="modal-content" @click.stop>
@@ -247,6 +289,16 @@ export default {
       opponentDiceRoll: 1,
       isRolling: false,
       isWinner: false,
+      // Turn dice roll state
+      showTurnDiceModal: false,
+      turnDiceState: 'rolling', // rolling, tie, result
+      myTurnDiceRoll: 1,
+      opponentTurnDiceRoll: 1,
+      isTurnDiceRolling: false,
+      isFirstPlayer: false,
+      // Turn indicator state
+      showTurnModal: false,
+      currentTurn: null, // Player index whose turn it is
       // Color selection state
       showColorSelection: false,
       showWaitingForColor: false,
@@ -269,13 +321,19 @@ export default {
       return this.currentLobby !== null;
     },
     isBoardLocked() {
-      return !this.connected || !this.isActivePlayer || this.gameStatus !== 'active';
+      return !this.connected || !this.isActivePlayer || this.gameStatus !== 'active' || this.currentTurn !== this.playerIndex;
     },
     gameStatusMessage() {
       if (this.gameStatus === 'waiting') {
         return 'Waiting for players...';
       } else if (this.gameStatus === 'active') {
-        return 'Game Active - Play!';
+        if (this.currentTurn === null) {
+          return 'Game Active - Play!';
+        } else if (this.currentTurn === this.playerIndex) {
+          return '🐧 Your Turn! 🐧';
+        } else {
+          return 'Opponent\'s Turn - Please Wait';
+        }
       }
       return '';
     },
@@ -293,6 +351,16 @@ export default {
         return `You rolled ${this.myDiceRoll} and your opponent rolled ${this.opponentDiceRoll}. Choose your color!`;
       } else {
         return `You rolled ${this.myDiceRoll} and your opponent rolled ${this.opponentDiceRoll}. Waiting for winner to choose...`;
+      }
+    },
+    turnDiceResultTitle() {
+      return this.isFirstPlayer ? '🎉 You Go First! 🎉' : 'Opponent Goes First';
+    },
+    turnDiceResultMessage() {
+      if (this.isFirstPlayer) {
+        return `You rolled ${this.myTurnDiceRoll} and your opponent rolled ${this.opponentTurnDiceRoll}. You get the first turn!`;
+      } else {
+        return `You rolled ${this.myTurnDiceRoll} and your opponent rolled ${this.opponentTurnDiceRoll}. Your opponent goes first.`;
       }
     }
   },
@@ -346,6 +414,18 @@ export default {
             this.showDiceModal = false;
             this.showColorSelection = false;
             this.showWaitingForColor = false;
+          } else if (data.type === 'turnDiceRollStart') {
+            // Start turn determination dice roll animation
+            this.handleTurnDiceRollStart(data);
+          } else if (data.type === 'turnDiceRollTie') {
+            // Handle turn dice roll tie
+            this.handleTurnDiceRollTie(data);
+          } else if (data.type === 'turnDiceRollWinner') {
+            // Show turn determination result
+            this.handleTurnDiceRollWinner(data);
+          } else if (data.type === 'turnChanged') {
+            // Update current turn
+            this.handleTurnChanged(data);
           } else if (data.type === 'gameStart') {
             // Show welcome modal when game starts
             this.showWelcomeModal(data.yourColor);
@@ -354,7 +434,10 @@ export default {
             this.showDiceModal = false;
             this.showColorSelection = false;
             this.showWaitingForColor = false;
+            this.showTurnDiceModal = false;
+            this.showTurnModal = false;
             this.playerColor = null;
+            this.currentTurn = null;
             this.modalTitle = 'Player Disconnected';
             this.modalMessage = data.message;
             this.showModal = true;
@@ -384,6 +467,8 @@ export default {
             this.playerAssignmentReceived = false;
             this.playerIndex = null;
             this.gameStatus = 'waiting';
+            this.currentTurn = null;
+            this.showTurnModal = false;
             this.chatMessages = [];
             this.grid = Array(10).fill(null).map(() => Array(10).fill('lime'));
           } else if (data.type === 'error') {
@@ -527,6 +612,65 @@ export default {
       }));
       
       this.showColorSelection = false;
+    },
+    handleTurnDiceRollStart(data) {
+      this.showTurnDiceModal = true;
+      this.turnDiceState = 'rolling';
+      this.isTurnDiceRolling = true;
+      
+      // Set initial roll values (will animate)
+      this.myTurnDiceRoll = 1;
+      this.opponentTurnDiceRoll = 1;
+      
+      // Animate dice rolling
+      let rollCount = 0;
+      const rollInterval = setInterval(() => {
+        this.myTurnDiceRoll = Math.floor(Math.random() * 6) + 1;
+        this.opponentTurnDiceRoll = Math.floor(Math.random() * 6) + 1;
+        rollCount++;
+        
+        // Stop after about 2.5 seconds and show actual result
+        if (rollCount > 15) {
+          clearInterval(rollInterval);
+          this.isTurnDiceRolling = false;
+          // Set the actual roll from server
+          if (data.playerIndex === this.playerIndex) {
+            this.myTurnDiceRoll = data.roll;
+          }
+          // We'll get opponent's roll from the turnDiceRollWinner message
+        }
+      }, 150);
+    },
+    handleTurnDiceRollTie(data) {
+      this.turnDiceState = 'tie';
+      this.isTurnDiceRolling = false;
+      // After delay, it will restart automatically from server
+    },
+    handleTurnDiceRollWinner(data) {
+      this.isFirstPlayer = data.isFirst;
+      this.currentTurn = data.firstPlayerIndex;
+      
+      this.turnDiceState = 'result';
+      this.isTurnDiceRolling = false;
+      
+      // After showing result for 2 seconds, close the modal and show turn modal if first
+      setTimeout(() => {
+        this.showTurnDiceModal = false;
+        if (this.isFirstPlayer) {
+          this.showTurnModal = true;
+        }
+      }, 2000);
+    },
+    handleTurnChanged(data) {
+      this.currentTurn = data.currentTurn;
+      
+      // Show turn modal if it's your turn
+      if (data.isYourTurn) {
+        this.showTurnModal = true;
+      }
+    },
+    closeTurnModal() {
+      this.showTurnModal = false;
     },
     createLobby() {
       if (!this.connected || !this.newLobbyName.trim()) {
@@ -1102,6 +1246,59 @@ h1 {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Turn Modal Styles */
+.turn-modal {
+  min-width: 400px;
+  padding: 40px;
+  animation: bounceIn 0.5s ease;
+}
+
+@keyframes bounceIn {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  70% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.penguin-emoji {
+  font-size: 80px;
+  margin-bottom: 20px;
+  animation: wiggle 1s ease-in-out infinite;
+}
+
+@keyframes wiggle {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-10deg);
+  }
+  75% {
+    transform: rotate(10deg);
+  }
+}
+
+.penguin-button {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  font-size: 18px;
+  padding: 15px 40px;
+}
+
+.penguin-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
 }
 
 /* Lobby Browser Styles */
