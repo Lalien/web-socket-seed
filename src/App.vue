@@ -650,6 +650,15 @@ export default {
       this.isFirstPlayer = data.isFirst;
       this.currentTurn = data.firstPlayerIndex;
       
+      // Set the actual dice roll values from server
+      if (data.playerIndex === 0) {
+        this.myTurnDiceRoll = data.roll1;
+        this.opponentTurnDiceRoll = data.roll2;
+      } else {
+        this.myTurnDiceRoll = data.roll2;
+        this.opponentTurnDiceRoll = data.roll1;
+      }
+      
       this.turnDiceState = 'result';
       this.isTurnDiceRolling = false;
       

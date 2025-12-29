@@ -403,7 +403,7 @@ function startTurnDiceRoll(lobbyName) {
   }, 3000); // 3 second delay for animation
 }
 
-// Determine who goes first from turn dice rolls
+  // Determine who goes first from turn dice rolls
 function determineTurnDiceWinner(lobbyName) {
   const lobby = lobbies.get(lobbyName);
   if (!lobby) {
@@ -444,7 +444,10 @@ function determineTurnDiceWinner(lobbyName) {
       player.ws.send(JSON.stringify({
         type: 'turnDiceRollWinner',
         isFirst: index === firstPlayerIndex,
-        firstPlayerIndex: firstPlayerIndex
+        firstPlayerIndex: firstPlayerIndex,
+        roll1: roll1,
+        roll2: roll2,
+        playerIndex: index
       }));
     }
   });
