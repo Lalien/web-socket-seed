@@ -89,6 +89,9 @@ function findUserById(id) {
 function createOrUpdateUser(userData) {
   const { provider, providerId, email, displayName, photo } = userData;
   
+  // Normalize email - treat empty string as null
+  const normalizedEmail = email && email.trim() ? email.trim() : null;
+  
   // First check if user exists by provider ID
   let user = findUserByProviderId(provider, providerId);
   
@@ -99,13 +102,13 @@ function createOrUpdateUser(userData) {
       SET email = COALESCE(?, email), display_name = ?, photo = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
-    updateStmt.run(email, displayName, photo, user.id);
+    updateStmt.run(normalizedEmail, displayName, photo, user.id);
     return findUserById(user.id);
   }
   
   // Check if user exists with the same email from a different provider
-  if (email) {
-    user = findUserByEmail(email);
+  if (normalizedEmail) {
+    user = findUserByEmail(normalizedEmail);
     
     if (user) {
       // Merge accounts - update the existing record with the new provider ID
@@ -116,14 +119,14 @@ function createOrUpdateUser(userData) {
           SET google_id = ?, email = COALESCE(?, email), display_name = ?, photo = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `);
-        updateStmt.run(providerId, email, displayName, photo, user.id);
+        updateStmt.run(providerId, normalizedEmail, displayName, photo, user.id);
       } else if (provider === 'github') {
         const updateStmt = db.prepare(`
           UPDATE users 
           SET github_id = ?, email = COALESCE(?, email), photo = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `);
-        updateStmt.run(providerId, email, photo, user.id);
+        updateStmt.run(providerId, normalizedEmail, photo, user.id);
       }
       return findUserById(user.id);
     }
@@ -138,7 +141,7 @@ function createOrUpdateUser(userData) {
   const googleId = provider === 'google' ? providerId : null;
   const githubId = provider === 'github' ? providerId : null;
   
-  const result = insertStmt.run(email, displayName, googleId, githubId, photo);
+  const result = insertStmt.run(normalizedEmail, displayName, googleId, githubId, photo);
   return findUserById(result.lastInsertRowid);
 }
 
